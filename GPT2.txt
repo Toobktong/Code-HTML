@@ -1,0 +1,439 @@
+📂 โครงสร้างไฟล์โปรเจกต์ (React)
+my-dashboard/
+│  package.json
+│  vite.config.js (ถ้าใช้ Vite)
+│
+└── src/
+    │  main.jsx
+    │  App.jsx
+    │  index.css
+    │
+    ├── components/
+    │     UploadLeaveFile.jsx
+    │     UploadBranchFile.jsx
+    │     SummaryTable.jsx
+    │     ExportControls.jsx
+    │
+    └── utils/
+          calculateInspection.js
+
+package.json
+{
+  "name": "onsite-remote-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "vite": "^4.0.0"
+  }
+}
+
+vite.config.js
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+});
+
+src/main.jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+src/index.css
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f5f5;
+}
+.dashboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 16px;
+  padding: 16px;
+}
+.box {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  overflow: auto;
+}
+h2 {
+  margin-top: 0;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+table, th, td {
+  border: 1px solid #ddd;
+}
+th, td {
+  padding: 8px;
+  text-align: left;
+}
+.btn {
+  display: inline-block;
+  margin: 4px;
+  padding: 8px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn:hover {
+  background-color: #0056b3;
+}
+.upload-section {
+  margin-bottom: 12px;
+}
+
+src/utils/calculateInspection.js
+// โซน (ภาค) ที่ใช้สลับกัน
+const REGIONS = ['เหนือ', 'กลาง', 'อีสาน', 'ใต้'];
+
+/**
+ * คำนวณการจัดสรรตรวจ Onsite โดยไม่ให้ซ้ำภาคสำหรับแต่ละเดือน
+ * @param {Array} employees — list ของพนักงาน [{ name, ... }]
+ * @param {number} months — จำนวนเดือนที่ต้องการจัด (default 3)
+ * @returns {Object} assignments: { [name]: [{ month, region, type: 'Onsite' }, ...], ... }
+ */
+export function getUniqueRegionAssignments(employees, months = 3) {
+  const assignments = {};
+
+  employees.forEach(emp => {
+    const name = emp.name;
+    assignments[name] = [];
+
+    // ใช้ตัวแปร local ใช้ซ้ำภาค
+    let usedRegions = new Set();
+
+    for (let m = 0; m < months; m++) {
+      // หาภาคที่ยังไม่ถูกใช้
+      const available = REGIONS.filter(r => !usedRegions.has(r));
+      if (available.length === 0) {
+        // ถ้าหมดภาคที่ไม่ซ้ำแล้ว ก็รีเซ็ตชุดภาค
+        usedRegions.clear();
+        available.push(...REGIONS);
+      }
+      // สุ่มเลือกภาคที่เหลือ
+      const idx = Math.floor(Math.random() * available.length);
+      const assignedRegion = available[idx];
+
+      assignments[name].push({
+        month: m + 1,
+        region: assignedRegion,
+        type: 'Onsite'
+      });
+
+      usedRegions.add(assignedRegion);
+    }
+  });
+
+  return assignments;
+}
+
+/**
+ * คำนวณการจัดตรวจ Remote — ใจความว่า Remote ไม่มีเงื่อนไข
+ * @param {Array} employees — list ของพนักงาน
+ * @param {number} months
+ * @returns {Object} assignments remote
+ */
+export function getRemoteAssignments(employees, months = 3) {
+  const assignments = {};
+
+  employees.forEach(emp => {
+    const name = emp.name;
+    assignments[name] = [];
+
+    for (let m = 0; m < months; m++) {
+      assignments[name].push({
+        month: m + 1,
+        region: 'ทุกภาค',
+        type: 'Remote'
+      });
+    }
+  });
+
+  return assignments;
+}
+
+src/components/UploadLeaveFile.jsx
+import React from 'react';
+import * as XLSX from 'xlsx';
+
+const UploadLeaveFile = ({ onDataLoaded }) => {
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      // แปลงข้อมูลเป็น object
+      const leaveData = {}; // { name: [dates...] }
+      rows.slice(1).forEach(row => {
+        const name = row[0];
+        const date = row[1];
+        if (!name) return;
+        if (!leaveData[name]) leaveData[name] = [];
+        leaveData[name].push(date);
+      });
+
+      onDataLoaded(leaveData);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  return (
+    <div className="upload-section">
+      <input type="file" accept=".xlsx, .xls" onChange={handleFile} />
+    </div>
+  );
+};
+
+export default UploadLeaveFile;
+
+src/components/UploadBranchFile.jsx
+import React from 'react';
+import * as XLSX from 'xlsx';
+
+const UploadBranchFile = ({ onDataLoaded }) => {
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      // แปลงข้อมูล
+      const branchData = []; // list of { name, branch, level }
+      rows.slice(1).forEach(row => {
+        const name = row[0];
+        const branch = row[1];
+        const level = row[2];
+        if (!name) return;
+        branchData.push({ name, branch, level });
+      });
+
+      onDataLoaded(branchData);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  return (
+    <div className="upload-section">
+      <input type="file" accept=".xlsx, .xls" onChange={handleFile} />
+    </div>
+  );
+};
+
+export default UploadBranchFile;
+
+src/components/SummaryTable.jsx
+import React from 'react';
+
+const SummaryTable = ({ summary }) => {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>ชื่อพนักงาน</th>
+          <th>วันทำงานจริง (Q)</th>
+          <th>ตรวจ Onsite</th>
+          <th>ตรวจ Remote</th>
+        </tr>
+      </thead>
+      <tbody>
+        {Object.entries(summary).map(([name, obj]) => (
+          <tr key={name}>
+            <td>{name}</td>
+            <td>{obj.workdays}</td>
+            <td>
+              {obj.inspection?.filter(i => i.type === 'Onsite')
+                .map(i => `เดือน ${i.month}(${i.region})`)
+                .join(', ')}
+            </td>
+            <td>
+              {obj.inspection?.filter(i => i.type === 'Remote')
+                .map(i => `เดือน ${i.month}`)
+                .join(', ')}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+export default SummaryTable;
+
+src/components/ExportControls.jsx
+import React from 'react';
+import * as XLSX from 'xlsx';
+
+const ExportControls = ({ summary }) => {
+  const exportAll = () => {
+    const allRows = [];
+
+    Object.entries(summary).forEach(([name, obj]) => {
+      obj.inspection.forEach(item => {
+        allRows.push({
+          name,
+          month: item.month,
+          type: item.type,
+          region: item.region || '',
+          workdays: obj.workdays
+        });
+      });
+    });
+
+    const ws = XLSX.utils.json_to_sheet(allRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Summary');
+    XLSX.writeFile(wb, `report_all.xlsx`);
+  };
+
+  const exportIndividual = () => {
+    Object.entries(summary).forEach(([name, obj]) => {
+      const rows = obj.inspection.map(item => ({
+        name,
+        month: item.month,
+        type: item.type,
+        region: item.region || '',
+        workdays: obj.workdays
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, name);
+      XLSX.writeFile(wb, `report_${name}.xlsx`);
+    });
+  };
+
+  return (
+    <div>
+      <button className="btn" onClick={exportAll}>Export ทั้งหมด</button>
+      <button className="btn" onClick={exportIndividual}>Export รายบุคคล</button>
+    </div>
+  );
+};
+
+export default ExportControls;
+
+src/App.jsx
+import React, { useState, useEffect } from 'react';
+import UploadLeaveFile from './components/UploadLeaveFile';
+import UploadBranchFile from './components/UploadBranchFile';
+import SummaryTable from './components/SummaryTable';
+import ExportControls from './components/ExportControls';
+import {
+  getUniqueRegionAssignments,
+  getRemoteAssignments
+} from './utils/calculateInspection';
+
+function App() {
+  const [leaveData, setLeaveData] = useState(null); 
+  const [branchData, setBranchData] = useState(null);
+  const [summary, setSummary] = useState({});
+
+  // เมื่อ leaveData หรือ branchData เปลี่ยน => คำนวณ summary ใหม่
+  useEffect(() => {
+    if (!leaveData || !branchData) return;
+
+    // เตรียม list พนักงาน
+    const employees = branchData.map(b => ({ name: b.name }));
+
+    // คำนวณ Onsite ไม่ซ้ำภาค
+    const onsiteAssign = getUniqueRegionAssignments(employees, 3);
+    // คำนวณ Remote
+    const remoteAssign = getRemoteAssignments(employees, 3);
+
+    // รวมข้อมูลเป็น summary
+    const newSummary = {};
+
+    employees.forEach(emp => {
+      const name = emp.name;
+      const workdays = 66; // ตัวอย่างค่าทำงาน Q (คุณอาจคำนวณจริง)
+      newSummary[name] = {
+        workdays,
+        inspection: [
+          ...(onsiteAssign[name] || []),
+          ...(remoteAssign[name] || [])
+        ]
+      };
+    });
+
+    setSummary(newSummary);
+
+  }, [leaveData, branchData]);
+
+  return (
+    <div className="dashboard">
+      <div className="box">
+        <h2>1. วันลา / วันทำงาน</h2>
+        <UploadLeaveFile onDataLoaded={setLeaveData} />
+        {/* เพิ่ม table แสดง leaveData และ workdays ถ้าต้องการ */}
+      </div>
+
+      <div className="box">
+        <h2>2. ข้อมูลสาขา / ระดับ</h2>
+        <UploadBranchFile onDataLoaded={setBranchData} />
+        {/* เพิ่ม table แสดง branchData ถ้าต้องการ */}
+      </div>
+
+      <div className="box">
+        <h2>3. สรุปผล</h2>
+        <SummaryTable summary={summary} />
+      </div>
+
+      <div className="box">
+        <h2>4. Export</h2>
+        <ExportControls summary={summary} />
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+✅ วิธีใช้งาน
+
+สร้างโปรเจกต์ใหม่ (เช่น npm create vite@latest onsite-remote-dashboard --template react)
+
+แทรกไฟล์ข้างต้นลงในโฟลเดอร์ src/ (และ config ต่าง ๆ)
+
+ติดตั้ง dependencies: npm install xlsx react react-dom
+
+รัน npm run dev
+
+ทดสอบอัปโหลดไฟล์ลา / สาขา แล้วดูผลลัพธ์ + Export
