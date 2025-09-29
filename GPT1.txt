@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>Employee Workdays Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 50vh 50vh;
+      gap: 10px;
+      padding: 10px;
+    }
+    .box {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: auto;
+    }
+    h2 {
+      font-size: 1.2em;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ddd;
+    }
+    th, td {
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .upload-section {
+      margin-bottom: 10px;
+    }
+    .btn {
+      padding: 6px 12px;
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .btn:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="dashboard">
+    <!-- ช่องที่ 1: ข้อมูลวันลา -->
+    <div class="box" id="box1">
+      <h2>1. ข้อมูลวันทำงาน & วันลา</h2>
+      <div class="upload-section">
+        <input type="file" id="leaveFile" accept=".xlsx, .xls">
+      </div>
+      <table id="leaveTable">
+        <thead>
+          <tr>
+            <th>ชื่อพนักงาน</th>
+            <th>วันลาทั้งหมด</th>
+            <th>วันทำงานจริง</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- ช่องที่ 2: การตรวจตามระดับ -->
+    <div class="box" id="box2">
+      <h2>2. ข้อมูลสาขา & ระดับการตรวจ</h2>
+      <div class="upload-section">
+        <input type="file" id="branchFile" accept=".xlsx, .xls">
+      </div>
+      <table id="branchTable">
+        <thead>
+          <tr>
+            <th>ชื่อพนักงาน</th>
+            <th>สาขา</th>
+            <th>ระดับ</th>
+            <th>Onsite (%)</th>
+            <th>Remote (%)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- ช่องที่ 3: สรุปผล -->
+    <div class="box" id="box3">
+      <h2>3. สรุปผลรวม</h2>
+      <table id="summaryTable">
+        <thead>
+          <tr>
+            <th>ชื่อพนักงาน</th>
+            <th>วันทำงาน</th>
+            <th>ต้องตรวจ Onsite</th>
+            <th>ต้องตรวจ Remote</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- ช่องที่ 4: Export -->
+    <div class="box" id="box4">
+      <h2>4. Export ข้อมูล</h2>
+      <button class="btn" onclick="exportAll()">Export ทั้งหมด</button>
+      <button class="btn" onclick="exportIndividual()">Export รายบุคคล</button>
+    </div>
+  </div>
+
+  <script>
+    // ตัวอย่างการอ่านไฟล์ลา
+    document.getElementById('leaveFile').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+        
+        const table = document.getElementById('leaveTable').querySelector('tbody');
+        table.innerHTML = '';
+
+        const leaveData = {};
+
+        json.slice(1).forEach(row => {
+          const name = row[0];
+          const date = row[1];
+          if (!leaveData[name]) {
+            leaveData[name] = [];
+          }
+          leaveData[name].push(date);
+        });
+
+        Object.keys(leaveData).forEach(name => {
+          const tr = document.createElement('tr');
+          const leaveDays = leaveData[name].length;
+          const totalWorkdays = 66; // ตัวอย่าง: 3 เดือนมีประมาณ 66 วันทำงาน (จ.-ศ.)
+          const actualWorkdays = totalWorkdays - leaveDays;
+
+          tr.innerHTML = `
+            <td>${name}</td>
+            <td>${leaveDays}</td>
+            <td>${actualWorkdays}</td>
+          `;
+          table.appendChild(tr);
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    // TODO: เพิ่มฟังก์ชันสำหรับอ่านไฟล์ branchFile และคำนวณ % การตรวจ
+
+    // Export ตัวอย่าง (ทำแบบง่าย)
+    function exportAll() {
+      alert("ยังไม่ได้เชื่อมฟังก์ชัน Export จริง");
+    }
+
+    function exportIndividual() {
+      alert("ยังไม่ได้เชื่อมฟังก์ชัน Export รายบุคคล");
+    }
+  </script>
+
+</body>
+</html>
